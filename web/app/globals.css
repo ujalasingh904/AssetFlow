@@ -231,6 +231,25 @@ dialog::backdrop { background: #102826a6; }
   .pager { justify-content: center; flex-wrap: wrap; }
   .auth-panel { padding-inline: 18px; }
 }
+@media (max-width: 720px) {
+  html, body { width: 100%; max-width: 100%; overflow-x: clip; }
+  .shell, .workspace { width: 100%; min-width: 0; }
+  .workspace { container-type: inline-size; }
+  .content { width: 100%; }
+  .sidebar nav { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .sidebar nav button { flex-direction: column; justify-content: center; padding: 5px 1px; font-size: .72rem; }
+  .table-wrap { min-width: 0; width: 100%; }
+  .table-wrap table, .table-wrap tbody { display: block; }
+  .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table-wrap tbody tr { display: grid; gap: 7px; padding: 14px; }
+  .table-wrap td { display: block; padding: 0; white-space: normal; overflow-wrap: anywhere; }
+  .table-wrap td[data-label] { display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: baseline; gap: 2px 8px; }
+  .table-wrap td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .78rem; }
+  .table-wrap td small { grid-column: 2; }
+  .table-wrap td .status { justify-self: start; }
+  .table-wrap td:last-child { justify-self: end; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
