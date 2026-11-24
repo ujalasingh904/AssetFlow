@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+.next/
+__pycache__/
+.pytest_cache/
+*.tsbuildinfo 
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+README*
