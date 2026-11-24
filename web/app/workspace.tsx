@@ -165,10 +165,10 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
       : <div className="table-wrap"><table>
         <thead><tr><th>Equipment</th>{staff && <th>Borrower</th>}<th>Dates</th><th>Status</th><th><span className="sr-only">Action</span></th></tr></thead>
         <tbody>{items.map(loan => <tr key={loan.id}>
-          <td><strong>{loan.asset_name}</strong><small>{loan.tag}</small></td>
-          {staff && <td>{loan.borrower_name}</td>}
-          <td>{dateLabel(loan.starts)} – {dateLabel(loan.ends)}</td>
-          <td><Badge value={loan.overdue ? "overdue" : loan.status} /></td>
+          <td data-label="Equipment"><strong>{loan.asset_name}</strong><small>{loan.tag}</small></td>
+          {staff && <td data-label="Borrower">{loan.borrower_name}</td>}
+          <td data-label="Dates">{dateLabel(loan.starts)} – {dateLabel(loan.ends)}</td>
+          <td data-label="Status"><Badge value={loan.overdue ? "overdue" : loan.status} /></td>
           <td><button className="text-button" onClick={() => setView({ kind: "loan", loan })}>View <ArrowRight size={14} /></button></td>
         </tr>)}</tbody>
       </table></div>;
@@ -266,8 +266,8 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
             <input type="search" value={search} maxLength={100} placeholder="Search name or email…" onChange={event => { setOffset(0); setSearch(event.target.value); }} /></label></div>
           {busy ? <Loading /> : memberPage.items.length ? <div className="table-wrap"><table>
             <thead><tr><th>Member</th><th>Role</th><th><span className="sr-only">Action</span></th></tr></thead>
-            <tbody>{memberPage.items.map(member => <tr key={member.uid}><td><strong>{member.name}</strong><small>{member.email}</small></td>
-              <td>{title(member.role)}</td><td>{member.role !== "admin" && <button className="secondary" disabled={Boolean(changingRole)} onClick={async () => {
+            <tbody>{memberPage.items.map(member => <tr key={member.uid}><td data-label="Member"><strong>{member.name}</strong><small>{member.email}</small></td>
+              <td data-label="Role">{title(member.role)}</td><td>{member.role !== "admin" && <button className="secondary" disabled={Boolean(changingRole)} onClick={async () => {
                 setChangingRole(member.uid); setActionIssue("");
                 try {
                   await api(user, `/members/${encodeURIComponent(member.uid)}/role`, { method: "PATCH", body: JSON.stringify({ role: member.role === "staff" ? "borrower" : "staff" }) });
