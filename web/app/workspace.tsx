@@ -10,6 +10,7 @@ import { Badge, Dialog, EditEquipment, EquipmentDetails, LoanDetails } from "./d
 import {
   api, dateLabel, errorText, title, type Activity, type Asset, type Loan, type Member, type Page, type Profile, type Stats,
 } from "./lib";
+import { RecordFilters } from "./record-filters";
 import { Brand } from "./sign-in";
 
 const tabs = [
@@ -57,6 +58,8 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
   const [stats, setStats] = useState<Stats>();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("");
+  const [recordQuery, setRecordQuery] = useState("");
+  const [navigation, setNavigation] = useState(0);
   const [offset, setOffset] = useState(0);
   const [view, setView] = useState<View>();
   const [busy, setBusy] = useState(true);
@@ -70,6 +73,8 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
   const loadProfile = useCallback(async () => setProfile(await api<Profile>(user, "/me")), [user]);
   const loadData = useCallback(async (signal?: AbortSignal) => {
     const params = new URLSearchParams({ offset: String(offset), search: search.trim(), status: filter });
+    const records = new URLSearchParams(recordQuery);
+    records.set("offset", String(offset));
     const config = { signal };
     if (tab === "Overview") {
       const [counts, assets, loans] = await Promise.all([
@@ -82,16 +87,16 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
       const data = await api<Page<Asset>>(user, "/assets?" + params, config);
       if (!signal?.aborted) setAssets(data);
     } else if (tab === "Loans") {
-      const data = await api<Page<Loan>>(user, "/loans?" + params, config);
+      const data = await api<Page<Loan>>(user, "/loans?" + records, config);
       if (!signal?.aborted) setLoans(data);
     } else if (tab === "Activity") {
-      const data = await api<Page<Activity>>(user, "/activity?" + params, config);
+      const data = await api<Page<Activity>>(user, "/activity?" + records, config);
       if (!signal?.aborted) setActivity(data);
     } else {
       const data = await api<Page<Member>>(user, "/members?" + params, config);
       if (!signal?.aborted) setMembers(data);
     }
-  }, [user, tab, search, filter, offset]);
+  }, [user, tab, search, filter, offset, recordQuery]);
 
   useEffect(() => {
     loadProfile().catch(error => setFetchIssue(errorText(error)));
@@ -105,7 +110,7 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
       .catch(error => { if (!controller.signal.aborted) setFetchIssue(errorText(error)); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); }), search ? 250 : 0);
     return () => { window.clearTimeout(id); controller.abort(); };
-  }, [loadData, profile, search]);
+  }, [loadData, profile, search, navigation]);
 
   useEffect(() => {
     if (!toast) return;
@@ -115,9 +120,8 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
 
   function navigate(next: Tab, nextFilter = "") {
     setBusy(true); setSearch(""); setFilter(nextFilter); setOffset(0); setActionIssue("");
-    if (next === tab && nextFilter === filter && !search && offset === 0) {
-      void loadData().catch(error => setFetchIssue(errorText(error))).finally(() => setBusy(false));
-    }
+    setRecordQuery(next === "Loans" && nextFilter ? new URLSearchParams({ status: nextFilter }).toString() : "");
+    setNavigation(value => value + 1);
     setTab(next);
   }
 
@@ -130,7 +134,7 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
   async function exportCsv() {
     setActionIssue("");
     try {
-      const blob = await api<Blob>(user, "/loans/export");
+      const blob = await api<Blob>(user, "/loans/export?" + recordQuery);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -160,12 +164,15 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
     Activity: "Activity history", Members: "Workspace members",
   };
 
+  const recordFilters = <RecordFilters key={navigation} activity={tab === "Activity"} role={profile.role}
+    initialStatus={filter} apply={query => { setOffset(0); setRecordQuery(query); }} />;
+
   function loanTable(items: Loan[]) {
-    return !items.length ? <Empty title="No loans here" message="Approved reservations and new requests appear here as soon as they’re submitted." />
+    return !items.length ? <Empty title={recordQuery ? "No matching loans" : "No loans here"} message={recordQuery ? "Adjust or clear your filters." : "New requests appear here once submitted."} />
       : <div className="table-wrap"><table>
         <thead><tr><th>Equipment</th>{staff && <th>Borrower</th>}<th>Dates</th><th>Status</th><th><span className="sr-only">Action</span></th></tr></thead>
         <tbody>{items.map(loan => <tr key={loan.id}>
-          <td data-label="Equipment"><strong>{loan.asset_name}</strong><small>{loan.tag}</small></td>
+          <td data-label="Equipment"><strong>{loan.asset_name}</strong><small>Loan #{loan.id} · {loan.tag}</small></td>
           {staff && <td data-label="Borrower">{loan.borrower_name}</td>}
           <td data-label="Dates">{dateLabel(loan.starts)} – {dateLabel(loan.ends)}</td>
           <td data-label="Status"><Badge value={loan.overdue ? "overdue" : loan.status} /></td>
@@ -246,18 +253,16 @@ export function Workspace({ auth, user }: { auth: Auth; user: User }) {
         </section>}
 
         {tab === "Loans" && <section className="group">
-          <div className="toolbar"><label><span className="sr-only">Loan status</span><select value={filter} onChange={event => { setOffset(0); setFilter(event.target.value); }}>
-            <option value="">All statuses</option>{["pending", "approved", "rejected", "checked_out", "overdue", "returned", "cancelled"].map(value => <option key={value} value={value}>{title(value)}</option>)}
-          </select></label></div>
+          {recordFilters}
           {busy ? <Loading /> : <>{loanTable(loanPage.items)}<Pager offset={offset} more={loanPage.more} setOffset={setOffset} /></>}
         </section>}
 
-        {tab === "Activity" && <section className="group">{busy ? <Loading /> : activityPage.items.length
+        {tab === "Activity" && <section className="group">{recordFilters}{busy ? <Loading /> : activityPage.items.length
           ? <ul className="activity-list">{activityPage.items.map(item => <li key={item.id}>
             <span className="metric-icon teal"><ActivityIcon size={17} /></span>
             <div><strong>{title(item.action)}{item.asset_name && ` · ${item.asset_name}`}</strong>
-              <small>{item.actor} · {new Date(item.created_at).toLocaleString()}</small>{item.detail && <p>{item.detail}</p>}</div>
-          </li>)}</ul> : <Empty title="No activity yet" message="Lending events appear here as people use the workspace." />}
+              <small>{item.loan_id && `Loan #${item.loan_id} · `}{item.actor} · {new Date(item.created_at).toLocaleString(undefined, { timeZone: "UTC" })} UTC</small>{item.detail && <p>{item.detail}</p>}</div>
+          </li>)}</ul> : <Empty title={recordQuery ? "No matching activity" : "No activity yet"} message={recordQuery ? "Adjust or clear your filters." : "Lending events appear here as people use the workspace."} />}
           {!busy && <Pager offset={offset} more={activityPage.more} setOffset={setOffset} />}
         </section>}
 

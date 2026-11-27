@@ -46,7 +46,7 @@ export async function api<T>(user: User, path: string, init: RequestInit = {}): 
     const line = Array.isArray(detail) ? detail.map(issue => issue.msg).join(" ") : detail;
     throw new Error(typeof line === "string" ? line : "The API could not complete the request.");
   }
-  if (path === "/loans/export") return await response.blob() as T;
+  if (path.split("?")[0] === "/loans/export") return await response.blob() as T;
   return response.json();
 }
 
@@ -65,7 +65,7 @@ export type Loan = {
   borrower_name: string;
 };
 export type Activity = {
-  id: number; action: string; detail: string; asset_name: string | null; actor: string; created_at: string;
+  id: number; loan_id: number | null; action: string; detail: string; asset_name: string | null; actor: string; created_at: string;
 };
 export type Stats = {
   total: number; available: number; reserved: number; checked_out: number;

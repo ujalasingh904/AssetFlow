@@ -3,7 +3,7 @@ import io
 from datetime import date, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import Field
 from sqlalchemy.exc import IntegrityError
@@ -37,14 +37,43 @@ class LoanAction(Input):
     damaged: bool = False
 
 
+def loan_filters(user: User, status: str = Query("", max_length=20),
+                 equipment: str = Query("", max_length=100), borrower: str = Query("", max_length=100),
+                 date_from: date | None = None, date_to: date | None = None,
+                 loan_id: int | None = Query(None, gt=0)):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "The end date must be on or after the start date.")
+    sql = LOAN_LIST
+    params = dict(staff=user["role"] != "borrower", uid=user["uid"], today=today())
+    if status == "overdue":
+        sql += " AND l.status='checked_out' AND l.ends < :today"
+    elif status:
+        sql += " AND l.status=:status"
+        params["status"] = status
+    if equipment.strip():
+        sql += " AND (strpos(lower(a.name), lower(:equipment)) > 0 OR strpos(lower(a.tag), lower(:equipment)) > 0)"
+        params["equipment"] = equipment.strip()
+    if borrower.strip():
+        require_role(user, "staff", "admin")
+        sql += " AND (strpos(lower(m.name), lower(:borrower)) > 0 OR strpos(lower(m.email), lower(:borrower)) > 0)"
+        params["borrower"] = borrower.strip()
+    if date_from:
+        sql += " AND l.ends >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        sql += " AND l.starts <= :date_to"
+        params["date_to"] = date_to
+    if loan_id:
+        sql += " AND l.id=:loan_id"
+        params["loan_id"] = loan_id
+    return sql + " ORDER BY l.id DESC", params
+
+
 @router.get("")
-def list_loans(user: User, offset: int = Query(0, ge=0), status: str = Query("", max_length=20)):
+def list_loans(filters=Depends(loan_filters), offset: int = Query(0, ge=0)):
+    sql, params = filters
     with engine().connect() as db:
-        items = rows(db, "WITH visible AS (" + LOAN_LIST + """)
-            SELECT * FROM visible
-            WHERE :status='' OR status=:status OR (:status='overdue' AND overdue)
-            ORDER BY id DESC LIMIT 51 OFFSET :offset
-        """, staff=user["role"] != "borrower", uid=user["uid"], today=today(), offset=offset, status=status)
+        items = rows(db, sql + " LIMIT 51 OFFSET :offset", **params, offset=offset)
     return {"items": items[:50], "more": len(items) > 50}
 
 
@@ -56,14 +85,14 @@ def csv_cell(value):
 
 
 @router.get("/export")
-def export_loans(user: User):
+def export_loans(user: User, filters=Depends(loan_filters)):
     require_role(user, "staff", "admin")
     fields = ["id", "tag", "asset_name", "borrower_name", "starts", "ends", "status", "overdue"]
     with engine().connect() as db:
-        items = rows(db, LOAN_LIST + " ORDER BY l.id DESC LIMIT 10001",
-                     staff=True, uid=user["uid"], today=today())
+        sql, params = filters
+        items = rows(db, sql + " LIMIT 10001", **params)
     if len(items) > 10000:
-        raise HTTPException(409, "The report exceeds 10,000 rows. Use a date-filtered database report.")
+        raise HTTPException(409, "The report exceeds 10,000 rows. Narrow the loan filters and try again.")
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(fields)

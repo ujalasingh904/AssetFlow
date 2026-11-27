@@ -253,3 +253,14 @@ dialog::backdrop { background: #102826a6; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+.record-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.record-filters label { display: grid; gap: 5px; min-width: 0; }
+.record-filters input, .record-filters select { width: 100%; min-width: 0; }
+.record-filters .inline-actions { grid-column: 1 / -1; flex-wrap: wrap; }

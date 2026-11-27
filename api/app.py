@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import date
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,15 +80,40 @@ def update_role(uid: str, data: MemberRole, user: User):
 
 
 @app.get("/activity")
-def activity(user: User, offset: int = Query(0, ge=0)):
+def activity(user: User, offset: int = Query(0, ge=0), date_from: date | None = None,
+             date_to: date | None = None, member: str = Query("", max_length=100),
+             equipment: str = Query("", max_length=100), action: str = Query("", max_length=40),
+             loan_id: int | None = Query(None, gt=0)):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "The end date must be on or after the start date.")
+    sql = """
+        SELECT e.id, e.action, e.detail, e.created_at, e.loan_id, a.name AS asset_name, m.name AS actor
+        FROM events e JOIN members m ON m.uid=e.actor_uid
+        LEFT JOIN assets a ON a.id=e.asset_id LEFT JOIN loans l ON l.id=e.loan_id
+        WHERE (:admin OR (:staff AND e.action <> 'role_updated') OR l.borrower_uid=:uid)
+    """
+    params = dict(admin=user["role"] == "admin", staff=user["role"] == "staff", uid=user["uid"], offset=offset)
+    if date_from:
+        sql += " AND e.created_at >= (CAST(:date_from AS date)::timestamp AT TIME ZONE 'UTC')"
+        params["date_from"] = date_from
+    if date_to:
+        sql += " AND e.created_at < ((CAST(:date_to AS date) + 1)::timestamp AT TIME ZONE 'UTC')"
+        params["date_to"] = date_to
+    if member.strip():
+        require_role(user, "staff", "admin")
+        sql += " AND (strpos(lower(m.name), lower(:member)) > 0 OR strpos(lower(m.email), lower(:member)) > 0)"
+        params["member"] = member.strip()
+    if equipment.strip():
+        sql += " AND (strpos(lower(a.name), lower(:equipment)) > 0 OR strpos(lower(a.tag), lower(:equipment)) > 0)"
+        params["equipment"] = equipment.strip()
+    if action:
+        sql += " AND e.action=:action"
+        params["action"] = action
+    if loan_id:
+        sql += " AND e.loan_id=:loan_id"
+        params["loan_id"] = loan_id
     with engine().connect() as db:
-        items = rows(db, """
-            SELECT e.id, e.action, e.detail, e.created_at, a.name AS asset_name, m.name AS actor
-            FROM events e JOIN members m ON m.uid=e.actor_uid
-            LEFT JOIN assets a ON a.id=e.asset_id LEFT JOIN loans l ON l.id=e.loan_id
-            WHERE (:admin OR (:staff AND e.action <> 'role_updated') OR l.borrower_uid=:uid)
-            ORDER BY e.id DESC LIMIT 51 OFFSET :offset
-        """, admin=user["role"] == "admin", staff=user["role"] == "staff", uid=user["uid"], offset=offset)
+        items = rows(db, sql + " ORDER BY e.id DESC LIMIT 51 OFFSET :offset", **params)
     return {"items": items[:50], "more": len(items) > 50}
 
 
